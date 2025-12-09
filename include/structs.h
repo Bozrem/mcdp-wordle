@@ -16,7 +16,6 @@
 #include <stddef.h>
 
 
-
 // --- Bitmapping ---
 typedef struct {
     uint64_t map[(ANSWERS + 63) / 64];
@@ -69,11 +68,13 @@ typedef struct {
 // Configuration type for global
 typedef struct {
     int dp_threshold;       // Amount of remaining possible answers to trigger full DP
+    int pure_dp_mode;       // Running a pure DP solution instead of algorithm
 } run_config_t;
 
 // Global struct passed to all workers
 typedef struct {
-    StateNode *hash_table;  // Hash table with all the states // TODO consider if this is worth it's own struct
+    state_node_t *hash_table;  // Hash table with all the states // TODO consider if this is worth it's own struct
     size_t table_size;
     run_config_t config;
+    // TODO: Some sort of statistics
 } global_state_t;
