@@ -11,25 +11,29 @@
 #pragma once
 
 #include "config.h"
+
 #include <stdint.h>
 #include <omp.h>
 #include <stddef.h>
+#include <stdio.h>
 
 
 // --- Bitmapping ---
 typedef struct {
-    uint64_t map[(ANSWERS + 63) / 64];
+    uint64_t map[(ANSWERS + 63) / 64]; // TODO: Figure out how to do this without a hardcode
 } state_bitmap_t;
 
 typedef struct {
-    uint64_t map[(GUESSES + 63) / 64];
+    uint64_t map[(GUESSES + 63) / 64]; // TODO: Above
 } action_bitmap_t;
 
 // --- State Node ---
 
 // Q Entry
 typedef struct {
-    double q;               // Current Q value
+    double q;               // Cached version for reading, gets replaced from calc below
+    double sum_value;       // Components of Q, just separated for more FP accuracy
+    int visit_count;
     int total_children;     // Number of offshoots
     int solved_children;    // How many children are done
 
@@ -44,37 +48,72 @@ typedef enum {
     STATUS_SOLVED = 2,      // This state is completely solved
 } state_status_t;
 
-// State Node, pretty much the main struct
-typedef struct {
+typedef struct state_node_s {
     state_bitmap_t state;   // The answers still possible in this state
-    // action_bitmap_t action; // The informationally unique remaining actions
+    action_bitmap_t action; // The informationally unique and useful remaining actions
     uint64_t hash;          // For lookups in the main table
 
     double v;
     int best_action;        // Which Q gives us that V?
-
-    int num_actions;        // How large is the following array?
-    q_entry_t *q_values;    // Q values. With action pruning, this should be separated in memory for space efficiency
-
     state_status_t status;
 
+    int num_actions;
+    q_entry_t *q_values;    // Pointer to dynamic array in mem
+
     omp_lock_t lock;        // Mutex lock for status and V
+    struct state_node_s *next_state; // Chaining Linked List
 } state_node_t;
 
-// --- Global Struct ---
+// --- Global Memory ---
 
-// TODO find a smarter way to enable or disable tracking actions based on if we have action pruning enabled or not
+typedef enum {
+    STAGE_FRESH = 0,        // Making this 0 also makes it easy to tell when we didn't load from a restore file
+    STAGE_BUILDING_LUT = 1,
+    STAGE_SOLVING = 2,
+    STAGE_DONE
+} run_stage_t;
 
-// Configuration type for global
 typedef struct {
     int dp_threshold;       // Amount of remaining possible answers to trigger full DP
     int pure_dp_mode;       // Running a pure DP solution instead of algorithm
+    int batch_size;         // How many episodes do we run between checkpoints?
+ 
+    long megabytes_alloc;   // Amount of memory to allocate, measured in megabytes
+    int hashmap_size_exp;   // Exponent for hashmap size (e.g. 2 ^ 29)
+
+    void* base_address;     // The base address to use in memory allocation
+
+    FILE* checkpoint_write; // FD for the checkpoint file to write to. NULL to disable checkpointing
+    FILE* restore_file;     // Optional Checkpoint file to restore from, NULL when starting from scratch
+    FILE* answers_text;     // File descriptor for the answers text
+    FILE* guesses_text;     // File descriptor for the guesses text
 } run_config_t;
 
 // Global struct passed to all workers
 typedef struct {
-    state_node_t *hash_table;  // Hash table with all the states // TODO consider if this is worth it's own struct
-    size_t table_size;
+    run_stage_t solve_stage;
+
+    void *mem_base;             // Base address for allocated space
+    size_t mem_capacity;        // Total memory capacity
+    size_t mem_top;             // Filled up to
+
+    uint8_t *pattern_lut;       // Pointer to guesses * answers flat array
+
+    state_node_t **states_table;// Pointer to an array of buckets
+    int table_size;             // Must be a power of two for the mask to work
+    int table_mask;             // just table_size - 1, but this can be used as a mask instead of modulo
+
+    omp_lock_t *bucket_locks;   // Pointer to array of locks for strips of the hashmap
+    int num_locks;              // Total locks (is a power of 2 to match the hashmap)
+    int lock_mask;              // Mask for getting lock index from a hash
+
     run_config_t config;
-    // TODO: Some sort of statistics
 } global_state_t;
+
+// --- Statistics ---
+typedef struct {
+    long nodes_expanded;
+    long sum_depth;
+    long iterations;
+    long total_solved_nodes;
+} episode_stats_t;

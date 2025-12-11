@@ -1,15 +1,14 @@
 /**
  * @file config.h
- * @brief Header file to control the high-level parameters
+ * @brief Hardcoded guess and answer info
  *
- * This file defines the functionalities enabled and key hyperparameters.
- * These include run mode, optimization enable and disable options, DP thresholds, etc
+ * Though it's POSSIBLE to make these not hardcoded (and I may do that later), it makes a lot of parts
+ * way easier to just hardcode them here for precisely defined struct sizes
  *
  * @author Remy Bozung
  * @date 2025-12-07
  */
 
-// Main data files to use
 #define ANSWER_PATH "data/answers.txt"
 #define ANSWERS 2315
 #define GUESS_PATH "data/guesses.txt"

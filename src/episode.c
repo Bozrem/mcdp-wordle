@@ -14,20 +14,16 @@
 typedef struct {
     state_node_t *node;
     int action_ind;
-} trajectory_step_t;
+} step_t;
 
 /**
  * run_episode - Parallel split point, runs and exploration and update
  * @param global - The global state struct designed by main as a guide for every episode iteration
- * @returns status - A status code for the episode
+ * @returns stats - Episode statistics to save and graph later
  */
-int run_episode(global_state_t *global) {
+episode_stats_t run_episode(global_state_t *global) {
     // TODO:
-    //  Implement
-    //  Figure out some form of statistical tracking for cool graphs
-    //  Should this global be a pointer?
-
-    return 0; // Not implemented
+    return (episode_stats_t){0}; // Not implemented
 }
 
 /**
@@ -35,7 +31,7 @@ int run_episode(global_state_t *global) {
  * @param global - Global state to use for allocations and accesses
  * @param parent - Parent node to expand from
  */ 
-void expand(global_state_t *global, state_node_t *parent) {
+void expand(global_state_t *global, state_node_t *parent) { // Consider making int for status codes?
     // 0. Gain lock
 
     // 1. Get all child node bitmaps across all actions
@@ -56,13 +52,16 @@ void expand(global_state_t *global, state_node_t *parent) {
 
 /**
  * propagate_update - The update rule for this algorithm, goes up only when new path is better
- * @param ...
+ * @param global - Pointer to the global struct for accessing state nodes and q entries
+ * @param trajectory - An array of the steps taken during this episode
+ * @param trajectory_len - Length of array above, cannot be >6
+ * @param final_v - The V value hit at the bottom from DP or solved children
  */
-void propagate_update(global_state_t *global, trajectory_step_t *trajectory) {
-    // TODO:
-    //  Need some way to encode a trajectory to work through
-    //  Could also shift this to a return code and leave the trajectory to run_episode, but have to be careful to bloat that too much
-    //  Consider what other parameters are required
+void propagate_update(global_state_t *global, step_t *trajectory, int trajectory_len, double final_v) {
+    // 1. Iterate backwards up trajectory, curious how much worse it is to do recursively?
+    // 2. Get the delta
+    // 3. Update the Q value (with concurrency)
+    // 4. If the next parent's V is worse than this new Q, replace it and go back to 1, otherwise done
 }
 
 /**
