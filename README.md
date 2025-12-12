@@ -1,126 +1,70 @@
-# MCDP Wordle
+# Monte-Carlo and Dynamic Programming Hybrid Algorithm for Wordle (MCDP)
 
-## Project Summary
-This project is an exploration of a reinforcement learning hybrid algorithm with an application to Wordle. It combines the best properties from both a Monte-Carlo and Dynamic Programming approach, creating an anytime algorithm that can do full explorations of the state space given enough time, which should also converge much quicker due to selecting based on an approximation.
+## Introduction
+Wordle is a complicated game from a computational perspective. At each guess, there are nearly 13,000 actions / words to guess, and the result depends on one of up to 2300 answers. As such, it's difficult to be able to have a true "solution" to the game that does not take ages to solve. An approach taken by an [MIT paper](https://auction-upload-files.s3.amazonaws.com/Wordle_Paper_Final.pdf) takes the pure DP approach. According to their paper, they made an optimized DP algorithm, and it "took days to solve [...] parallelized across a 64-core computer." Though they did get an answer, this isn't reasonable, as if the words get updated (as they have since that paper), that's another few days to recompute. 
 
-The sections below outline the three primary deviances from a classic Monte-Carlo algorithm
+Another approach that has been used (though I haven't had a chance to read any papers on it) has been a pure Monte-Carlo approach. The issue that the MIT paper points out is that a MC approach can be inefficient, but you also can't know that you actually have a perfectly optimal solution.
+
+This algorithm aims to take the best features of both the Monte-Carlo approach and the DP approach, and combine them. Notably, it ends up with the following properties:
+### Anytime Algorithm
+Due to not relying on knowing all children, MCDP gets the Monte-Carlo advantage of being able to stop at any point and still have a half decent answer
+### Terminating
+A huge disadvantage of Monte-Carlo is that it never actually terminates, so you can never provably know you have the correct answer. MCDP gets the advantage from DP of being able to know when it has actually solved a state, and can propagate changes up the tree all the way until it can solve the root node.
+### Fast, Unbiased Convergence
+Instead of the MC approach of using known values to select actions in exploration, this MCDP implementation uses a heuristic that is highly accurate at large states, and is thus able to select good actions right from the start. In graphs, this would be a comparison between a linear decrease in cost from a normal anytime DP and an exponential decay, only at the cost of some extra compute overhead.
+
+## Markov Decision Process
+### States
+The initial naive approach to a Wordle state (and one I took in previous work) is to say that a state is every guess and color results previously taken. Though this is an accurate representation, it is HUGELY inefficient. Instead, it turns out that we can perfectly emulate this to be simply which answers are still possible given previous results in the game. In code, I represent this with the state_bitmap type, which simply says for each possible answer in the game, is it still possible given the history. 
+
+Representing all the history in a single bitmap is both a much more computationally efficient way of representing the state, and also makes it clear that this is a Markov state, in that a single bitmap encodes the whole game's history.
+
+### Actions
+In Wordle, the actions are simply every word you are allowed to guess. Unfortunately, this is a huge set of nearly 13,000 words, making it extraordinarily difficult for normal Monte-Carlo approaches. To counter this, we use [Action Pruning](###action-pruning).
+
+### Transition
+Transitions are handled in the wordle.c file in src. My approach is that at the start, I precompute all actual guesses in Wordle in terms of guess and answer. Though this could be done in a more Dynamic Programming memoization fashion at runtime, it's much more efficient to have this whole table, as it allows vectorizing transitions.
+
+For full transitions, we have to take a state (list of every possible remaining answer), a guess / action, and the actual answer to use. This is a slight deviation from the usual definition of a transition, because the actual answer we're using isn't encoded into the state. This is because by deciding what answer we would like to follow at each guess, we can try to only choose answers for which we have never done the computation, helping accelerate fully solving that state. Unfortunately, I have not yet identified a way to do this that doesn't take a significant amount of memory and compute.
+
+In the transition, all we do is generate the "true pattern" that we would get with that guess and answer, then compare that to the imaginary patterns we would get with each of the other remaining answers. You can imagine this as keeping a whiteboard going with all the words you think it could be, then you make a guess and find out a certain letter is green, then going through and eliminating everything which that letter would not have been green had it been the answer.
+
+### Reward and Discount Factor
+The way I handle rewards is slightly different from the usual approach in RL. MCDP sees the value of any state or state-action pair as more of a cost. Given some state (remaining possibilities), the V represents the expected value of guesses that it will take us given our best known policy. This makes us not need a discount factor, and the reward at each transition is essentially to decrease the cost by one. If a child's V is 3, the parent has to take one guess to get to the child, and it's V is thus 4. 
+
 
 ## Algorithm
-The algorithm generally follows closer to Monte-Carlo in the larger states, then tends more and more towards Dynamic Programming as we descend the tree and shrink the state space. 
-
-Here are the three main deviances:
-
-### Off-Policy Action Selection
-Instead of the on-policy selection usually implemented with a Monte-Carlo approach, this algorithm will make use of a nice approximation for a guess's strength.
-
-To evaluate a guess, simulate next state results for each of the remaining possible answers, then just calculate the average reduction in possible answers. In previous work on Wordle, I attempted to use this strategy for everything, but I found that it tended to diverge from optimal play when the state space got small.
-
-Though this is slightly computationally expensive, it's much cheaper than the alternative of exploring those states and their own evaluations, as we would in DP. Furthermore, we can utilize some memoization to reuse these values in each episode, since they remain static regardless of the policy we're developing.
-
-The percentages produced by this evaluation can be given to a softmax function to determine probabilities of selection. Alternatively, we could greedily select from them.
-
-### Memoization of Monte-Carlo Results
-An advantage of Wordle is that we can build a model-based algorithm. There is no point in a Monte-Carlo exploration of a path if we know we have already done it. The advantage of being model-based is that we know the Wordle answer, so we can decide if we have explored a path deterministically.
-
-Say for example our episode has an answer word of "Snake"
-
-If we are in an exploration with the only remaining possible answers being "Snake" and "Spoke", our approximation may suggest that we do "Snake". This hit's all correct, meaning it was a leaf node. We can now confidently mark that Q value in that state with the action of "Snake" and the answer as "Snake".
-
-Now if we get to that same state again with an answer word of "Snake", even if our approximation suggests again that "Snake" is a better bet, we have already explored that path entirely, as evidenced by it's Q value being marked. Therefore, we remove it from the softmax function, and only make the guess of "Spoke", thereby ensuring we avoid duplicate exploration.
-
-Furthermore, if we get to that state AGAIN, but we see that all possible guesses have a set Q value, then we can now just end by setting our own V value by the best Q.
-
-### Dynamic Programming Evaluation on Smaller States
-One of the issues that comes up with the memoization technique just described is how it impacts memory. It is very possible to have to keep a ton of tiny states in memory that barely get visited. Instead, this third variation reduces that footprint by switching entirely to a dynamic programming approach when the state size is small enough.
-
-Take the previous episode descriptions as an example. In each of those, we had to do 3 entire episodes of exploration just to get the V for that tiny state.
-
-Instead, when the state size is sufficiently small, we just do a full dynamic programming evaluation to compute V*. 
-
-Though the previous solution would have gotten there eventually, there was a lot of wasted compute and memory usage in between. This method allows us to further avoid the slow down that Monte-Carlo introduces whilst now having to spend nearly as long doing the computation.
-
-## Update Rule
-In the exploration phase, we continue downwards until we hit a known V*, either through DP or when we know all children
-
-We can then backpropagate our changes through the V and Q values. 
-```python
-class StateNode:
-    def __init__(self, possible_words, initial=6.0):
-        self.initial = initial
-        self.num_outcomes = len(possible_words)
-        self.q_values = {}
-
-    def get_q(self, action):
-        return 1.0 + (self.q_values[action].sum_v / self.num_outcomes)
-        # 1.0 is the cost of a guess
-
-class QEntry:
-    def __init__(self, total_weight, initial):
-        self.sum_v = total_weight * initial
-        self.current_q = initial
-
-def backprop_update(trajectory, v):
-    if not trajectory: return
-    parent, action, child = trajectory[-1]
-    q_entry = parent.q_values[action]
-    
-    old_child_v = child.v
-    
-    # Calculate the change in sum
-    q_entry.sum_v += (v - old_child_v)
-    
-    new_q = 1.0 + (q_entry.sum_v / parent.num_outcomes)
-    q_entry.current_q = new_q
-
-    if new_q < parent.v:
-        parent.v = new_q
-        backprop_update(trajectory[:-1], new_q)
-```
-
-## Runthrough
-Example run to show how this algorithm works
 ### Exploration
-<!-- TODO: Update these with real values -->
-We begin the episode with the final word of "CHILD." Our first state is the full 2315 long answer list.
+The algorithm can largely be broken into two phases in exploration. Firstly, it uses the heuristic to guide actions in a normal Monte-Carlo decent through a few states. Second, when the system detects that a state is sufficiently small, it can switch to a DP approach, which can get us a V* value for a state really quickly when they're small enough, with the advantage of avoiding many more explorations down there to learn it all.
 
-Our hueristic looks at the options and selects 
+### Updating
+To actually be able to track convergence, MCDP uses a pessimistic update rule. Here is the update flow:
+1. Calculate delta from the new V and old V
+If the child state was a V of 4, and it dropped to a V of 3 (we use smaller numbers as a better V, so think of it more of a cost), our delta is -1
+2. New Q = Old Q + (delta / number of children)
+In the example above, if Q broke off into 5 different children, and our old Q was 4, our new Q would be 3.8
 
+Having this rolling average has mathematical equivalence to recalculating Q based off the V values of each child, but can instead do it in O(1) time.
 
+### Action Pruning
+A huge optimization that can be applied for Wordle specifically is the ability to prune down our action space. If we imagine that we had previously guessed a word that had a "P" in it and got a gray, then the guess of "YUIOP" is guaranteed to be worse than a guess of "YUIOL". An easy way to do this in code is to simply look at what each guess ends up with in possible answers, and anytime that a guess has either no decrease in answers (useless guess), or is a strict subset of another guess (duplicate information), then we can eliminate it from the action set and save ourselves a lot of compute down the road.
 
-## Plan
-An overall plan for how I can write this
+## Architecture
+The flow through the source code is designed as follows
+1. Main.c
+This is where we do all the initial input parsing and setup. After that, it enters a parallel for loop to run a batch of episodes from episode.c before making a checkpoint (using memory.c)
+2. Episode.c
+This is where a lot of the core components to the algorithm are. It has the overall episode runner, which does a full [exploration](###exploration) before applying the [update](###updating). It also has the function for a pure DP exploration, and the expansion engine for when we explore to an uninitialized state.
 
-### Components
-- Actions - Guess Word Bitmap
-    - Struct and some nice translation functions
-    - Need to consider if it is computationally worthwhile to narrow this down as well
-- State - Answer Word Bitmap
-    - Pretty similar to Actions
-- P - Transition Function
-    - Highly optimized
-    - Takes in:
-        - Action - String
-        - State
-        - Answer
-    - Returns a new State Bitmap
-- Full DP
+## Algorithm Drawbacks
+Though I'm still working on reducing it, this is a very memory and compute heavy algorithm. I'm designing it to be run on the Lotus cluster, and I'll likely require most of the 1.5TB of memory on each node. Hopefully, with the right optimizations, I'll be able to make a full comparison to the convergence and solving time between MCDP and pure DP
 
-### Aspects to figure out
-- Memoization techniques across multiple threads
-- Managing V and Q updates across threads
-    - May want to consider adding these to some sort of IO queue to process them separately
-    - They are only used as a check, not required to have the correct number
-        - May just repeat some computations occasionally, need to consider tradeoff
+## Project Status
+Though I did fully think out the algorithm, I have not had the time or ability to get it implemented yet. This is due to the sheer computational complexity of the algorithm requiring heavy optimization. I would have liked to have been able to get some initial results, but I wasn't able to get enough of the foundational architecture done in time to be able to get any real data.
 
-### Components to maybe Memoize
-Need to experiment to see the memory vs computation tradeoff between all of these.
-Ordered in most likely to be worthwhile to least.
+I really love this project, and it was something I was planning even before it became my RL final project, so I may have just bit off a bit more than I can chew for this. I have the algorithm all worked out, so I hope I was able to talk about it well and present it well, but getting the full implementation is going to be mostly over break. I think it has a lot of potential, and if I can get real results I may look at making a small paper on it.
 
-The ones marked as DELETABLE mean that there points at which they will never be used again, so we can save memory
+Sorry for not getting as far as we had hoped, but I spent a lot of time working through the idea, so I hope it's interesting.
 
-- Full V* Computations
-    - Pretty much a requirement of the algorithm
-    - DELETABLE
-- Transition function
-    - DELETABLE
-- 
+## Future Algorithm Expansion
+Though there are definitely some aspects I need to work on generalizing, this algorithm seems really interesting if I can get it working. It is heavily model-based, and it requires an optimal substructure like DP. However, I think that it could theoretically be applied as an anytime algorithm drop in to some things that currently use DP.
