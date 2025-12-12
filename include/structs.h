@@ -77,6 +77,7 @@ typedef struct {
     int dp_threshold;       // Amount of remaining possible answers to trigger full DP
     int pure_dp_mode;       // Running a pure DP solution instead of algorithm
     int batch_size;         // How many episodes do we run between checkpoints?
+    double heuristic_temp;  // Temperature for heuristic softmax
  
     long megabytes_alloc;   // Amount of memory to allocate, measured in megabytes
     int hashmap_size_exp;   // Exponent for hashmap size (e.g. 2 ^ 29)
@@ -112,8 +113,6 @@ typedef struct {
 
 // --- Statistics ---
 typedef struct {
-    long nodes_expanded;
     long sum_depth;
     long iterations;
-    long total_solved_nodes;
 } episode_stats_t;

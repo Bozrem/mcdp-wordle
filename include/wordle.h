@@ -10,5 +10,5 @@
 
 #include "structs.h"
 
-void step_bitmap(const state_bitmap_t *old_state, state_bitmap_t *new_state, int action_ind, int answer_ind);
+void step_bitmap(global_state_t *global, const state_bitmap_t *old_state, state_bitmap_t *new_state, int action_ind, int answer_ind);
 uint8_t generate_pattern(int action_ind, int answer_ind);
