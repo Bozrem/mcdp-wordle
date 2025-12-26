@@ -10,11 +10,18 @@
 
 #include "structs.h"
 #include "wordle.h"
+#include "config.h"
+#include <string.h>
+#include <ctype.h>
 
-#define PATTERN_UNKNOWN 255
+// Values for Base-3 encoding
+#define COLOR_GRAY 0
+#define COLOR_YELLOW 1
+#define COLOR_GREEN 2
 
-uint8_t generate_pattern_lookup(int action_ind, int answer_ind);
-
+uint8_t generate_pattern_lookup(global_state_t *global, int action_ind, int answer_ind);
+const char* get_answer_str(global_state_t *global, int answer_ind);
+const char* get_action_str(global_state_t *global, int answer_ind);
 
 
 /**
@@ -25,7 +32,7 @@ uint8_t generate_pattern_lookup(int action_ind, int answer_ind);
  * @param answer_ind - Answer/State bitmap index that is the answer to evaluate on
  */
 void step_bitmap(global_state_t *global, const state_bitmap_t *old_state, state_bitmap_t *new_state, int action_ind, int answer_ind) {
-    uint8_t match_pattern = generate_pattern_lookup(action_ind, answer_ind);
+    uint8_t match_pattern = generate_pattern_lookup(global, action_ind, answer_ind);
 
     for (int i = 0; i < sizeof(state_bitmap_t) * 8; i++) {
         // For each state in the bitmap
@@ -51,23 +58,51 @@ void step_bitmap(global_state_t *global, const state_bitmap_t *old_state, state_
  * @param answer_ind - Dictionary index of the answer to evaluate from
  * @returns color_pattern - The pattern ID representing the color set returned
  */
-uint8_t generate_pattern(global_state_t *global, int action_ind, int answer_ind) {
-    // This ONLY gets used in actually crunching the transition table, but that's 30 million combinations, so this needs to be FAST
-    // To fully crunch this in under an hour with all 48 cores, we need to be able to do 174 simulations / second
-    // I may want to consider multiple versions step_bitmap, one that is truely an anytime algorithm but much slower, and one that forces a full crunch first
+uint8_t generate_pattern(char *guess, char *target, global_state_t *global) {
+    uint8_t colors[5] = {0};
+    int target_freq[26] = {0};
 
-    return 0; // Not implemented
+    // Green and target frequencies
+    for (int i = 0; i < 5; i++) {
+        if (guess[i] == target[i])
+            colors[i] = COLOR_GREEN;
+        else
+            target_freq[target[i] - 'a']++; // Char to index
+    }
+
+    // Yellow
+    for (int i = 0; i < 5; i++) {
+        if (colors[i] == COLOR_GREEN) continue; // Already handled
+
+        int char_idx = guess[i] - 'a';
+        if (target_freq[char_idx] > 0) {
+            colors[i] = COLOR_YELLOW;
+            target_freq[char_idx]--;
+        }
+        // Gray would go here as 0, but that's already initialized
+    }
+
+    // Encode Base-3
+    uint8_t pattern = 0;
+    int multiplier = 1;
+    for (int i = 0; i < 5; i++) {
+        pattern += colors[i] * multiplier;
+        multiplier *= 3;
+    }
+
+    return pattern;
 }
 
 /**
- * generate_pattern_lookup - Does generate_pattern but relies on having a pre-computed table
- * @param action_ind - Dictionary index of the action / guess being taken
- * @param answer_ind - Dictionary index of the answer to evaluate from
- * @returns color_pattern - The pattern ID representing the color set returned
- */ 
-uint8_t generate_pattern_lookup(int action_ind, int answer_ind) {
-    // NOT IMPLEMENTED
-    return 0;
+ * generate_pattern_lookup - Fast O(1) retrieval from the LUT
+ * @param global - Global state, used for LUT memory access
+ * @param action_ind - Index of the action
+ * @param answer_ind - Index of the answer
+ * @returns The precomputed pattern
+ */
+uint8_t generate_pattern_lookup(global_state_t *global, int action_ind, int answer_ind) {
+    // The LUT is a flat array of size [GUESSES * ANSWERS], row = action, col = answer
+    return global->pattern_lut[action_ind * ANSWERS + answer_ind];
 }
 
 /**
@@ -76,7 +111,7 @@ uint8_t generate_pattern_lookup(int action_ind, int answer_ind) {
  * @param answer_ind - Answer bitmap index to convert
  * @return string of length 5 (plus a null terminator) with the answer word
  */
-char* get_answer_string(global_state_t *global, int answer_ind) {
+const char* get_answer_str(global_state_t *global, int answer_ind) {
 
 }
 
@@ -86,6 +121,6 @@ char* get_answer_string(global_state_t *global, int answer_ind) {
  * @param answer_ind - Answer bitmap index to convert
  * @return string of length 5 (plus a null terminator) with the answer word
  */
-char* get_action_string(global_state_t *global, int answer_ind) {
+const char* get_action_str(global_state_t *global, int answer_ind) {
 
 }
