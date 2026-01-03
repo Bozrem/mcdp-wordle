@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <cstddef>
+#include <stdexcept>
 
 template <typename T>
 class RelPtr {
@@ -22,20 +23,21 @@ public:
 
     // I know it would be cleaner to reuse these, but I'm not sure if that would create a functional overhead
     T* operator->() const {
-        if (offset == 0) return nullptr;
+        if (offset == 0) throw std::runtime_error("Null RelPtr Access");
         return reinterpret_cast<T*>(reinterpret_cast<uintptr_t>(this)+offset);
     }
 
     // Normal derefernece
     T& operator*() const {
-        if (offset == 0) return nullptr;
+        if (offset == 0) throw std::runtime_error("Null RelPtr Access");
         return *reinterpret_cast<T*>(reinterpret_cast<uintptr_t>(this)+offset);
     }
 
     // Allows array indexing
     T& operator[](std::ptrdiff_t index) const {
-        if (offset == 0) return nullptr;
-        return *reinterpret_cast<T*>(reinterpret_cast<uintptr_t>(this)+offset+index);
+        if (offset == 0) throw std::runtime_error("Null RelPtr Access");
+        T* base = *reinterpret_cast<T*>(reinterpret_cast<uintptr_t>(this)+offset+index);
+        return base[index];
     }
 
     // Allows    if (rel_ptr)
