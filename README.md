@@ -1,5 +1,8 @@
 # Monte-Carlo and Dynamic Programming Hybrid Algorithm for Wordle (MCDP)
 
+## NOTE
+This project is currently on pause. I am first persuing the simplier DP solver as a way to learn C++. You're welcome to check that out [here](https://github.com/Bozrem/pure-wordle)
+
 ## Introduction
 Wordle is a complicated game from a computational perspective. At each guess, there are nearly 13,000 actions / words to guess, and the result depends on one of up to 2300 answers. As such, it's difficult to be able to have a true "solution" to the game that does not take ages to solve. An approach taken by an [MIT paper](https://auction-upload-files.s3.amazonaws.com/Wordle_Paper_Final.pdf) takes the pure DP approach. According to their paper, they made an optimized DP algorithm, and it "took days to solve [...] parallelized across a 64-core computer." Though they did get an answer, this isn't reasonable, as if the words get updated (as they have since that paper), that's another few days to recompute. 
 
